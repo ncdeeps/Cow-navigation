@@ -1,0 +1,255 @@
+---
+title: "Halter_Deepak"
+author: "Deepak"
+date: "17/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Importing required libraries
+```{r}
+library(ggplot2)
+library(timelineR)
+library(geosphere)
+library(circular)
+library(lubridate)
+library(dplyr)
+library(ggpubr)
+```
+
+
+
+## Importing and viewing the structure of the dataset
+```{r}
+Mydata <- read.csv('Core Systems Analyst – Technical Assessment Dataset.csv',fileEncoding="UTF-16LE",sep = '\t',header=TRUE,stringsAsFactors = FALSE)
+Mydata$NZDT <- dmy_hms(Mydata$NZDT)
+head(Mydata)
+str(Mydata)
+
+```
+
+## Creating a new column with corrected heading assuming error in IMU data
+```{r}
+corrected_Heading <- lapply(Mydata$Heading, function(x) ifelse(x > 360, abs(360-x) , x))
+
+Mydata$corrected_Heading <- corrected_Heading
+
+Mydata$corrected_Heading <- as.numeric(unlist(Mydata$corrected_Heading))
+
+head(Mydata)
+
+
+Mydata$corrected_Heading[1]
+
+
+```
+#### Initial approach using degrees by bringing all data into 0-180 deg quadrants(to be considered if decided to work with the same unit)
+```{r}
+variation <- list()
+for (i in 1:length(Mydata$Heading)) {
+    if (Mydata$GPS.Heading[i] > 180) {
+        if (Mydata$corrected_Heading[[i]] > 180) {
+            var <- abs(Mydata$GPS.Heading[i] - Mydata$corrected_Heading[[i]])
+        }
+        else {
+            var <- (360-Mydata$GPS.Heading[i]) + Mydata$corrected_Heading[[i]]
+        }     
+    }  
+    else {
+        if (Mydata$corrected_Heading[[i]] < 180) {
+            var <- abs(Mydata$GPS.Heading[i] - Mydata$corrected_Heading[[i]])
+        }
+        else{
+            var <- Mydata$GPS.Heading[i] + (360- Mydata$corrected_Heading[[i]])
+        }
+    }   
+    variation <- rbind(variation,var)
+}
+   
+```
+
+```{r}
+Mydata$variation <- variation
+```
+
+
+```{r}
+Mydata$variation <- as.numeric(unlist(variation))
+
+mean(Mydata$variation)
+
+hist(Mydata$variation)
+
+head(Mydata)
+
+write.csv(Mydata,'Mydata.csv')
+```
+
+
+
+```{r}
+plot_grob <- plot_timeline(Mydata,data_cols = c('NZDT','variation','GPS.Heading','Heading','GPS.Speed'))
+
+plot(plot_grob)
+```
+
+## Bringing the data to two quadrants and looking into variations
+```{r}
+var_Head <- list()
+for (i in 1:length(Mydata$Heading)) {
+    if(Mydata$corrected_Heading[i]>180){
+        var <- (360 - Mydata$corrected_Heading[i])
+    }
+    else {
+        var <- Mydata$corrected_Heading[i]
+    }
+    var_Head <- rbind(var_Head,var)
+}
+```
+
+
+```{r}
+var_Head <- as.numeric(unlist(var_Head))
+
+```
+
+```{r}
+var_GPSHead <- list()
+for (i in 1:length(Mydata$Heading)) {
+    if(Mydata$GPS.Heading[i]>180){
+        var <- (360 - Mydata$GPS.Heading[i])
+    }
+    else {
+        var <- Mydata$GPS.Heading[i]
+    }
+    var_GPSHead <- rbind(var_GPSHead,var)
+}
+```
+
+```{r}
+var_GPSHead <- as.numeric(unlist(var_GPSHead))
+```
+##### May  not be actual mean for circular data. To look into actual mean refer to the section working with radians
+```{r}
+mean(Mydata$GPS.Speed)
+```
+
+
+```{r}
+Mydata$var_Head <- var_Head
+Mydata$var_GPSHead <- var_GPSHead
+```
+
+
+```{r}
+ggplot(Mydata, aes(x=var_GPSHead, y=var_Head, group=Serial.Number, color=Serial.Number)) + 
+geom_point()
+```
+
+
+## Approaching the data working with radians using circulate package
+```{r}
+anglecir =  conversion.circular(Mydata$Heading, type="angles", units="rad",modulo="2pi", template='geographics')
+summary(anglecir)
+```
+
+## Readings are converted to radians and the corresponding column is added
+```{r}
+var_Head_rad <- list()
+for (i in 1:length(Mydata$Heading)) {
+    var <- rad(Mydata$corrected_Heading[i])
+    var_Head_rad <- rbind(var_Head_rad,var)
+}
+Mydata$var_Head_rad <- as.numeric(unlist(var_Head_rad))
+```
+
+
+```{r}
+var_GPSHead_rad <- list()
+for (i in 1:length(Mydata$Heading)) {
+    var <- rad(Mydata$GPS.Heading[i])
+    var_GPSHead_rad <- rbind(var_GPSHead_rad,var)
+}
+Mydata$var_GPSHead_rad <- as.numeric(unlist(var_GPSHead_rad))
+```
+
+
+```{r}
+head(Mydata)
+```
+
+## Calculating summary statistics using circular package
+```{r}
+mean_head <- mean.circular(Mydata$var_Head_rad)
+mean_head_gps <- mean.circular(Mydata$var_GPSHead_rad)
+mean_head
+mean_head_gps
+```
+
+
+```{r}
+sd_head <- sd.circular(Mydata$var_Head_rad)
+sd_head_gps <- sd.circular(Mydata$var_GPSHead_rad)
+```
+
+## Establishing Confidence Intervals
+```{r}
+max_interval_head <- mean_head + (2*sd_head)
+min_interval_head <- mean_head - (2*sd_head)
+```
+
+```{r}
+min_interval1 <- rad(360) + min_interval_head
+max_interval1 <- rad(360)
+min_interval2 <- rad(0)
+max_interval2 <- max_interval_head
+```
+
+
+## Assigning class 1 and class 0 for hypothesis test
+```{r}
+class <- list()
+for (i in 1:length(Mydata$GPS.Heading)) {
+    val1 <- Mydata$var_GPSHead_rad[i]
+    val2 <- Mydata$var_Head_rad[i]
+    if((((val1 <= max_interval1) & (val1 >= min_interval1)) | ((val1 <= max_interval2 ) & (val1 >= min_interval2))) & (((val2 <= max_interval1) & (val2 >= min_interval1)) | ((val2 <= max_interval2 ) & (val2 >= min_interval2)))) {
+        var <- 1
+    }  
+    else {
+        var <- 0
+    }
+        class <- rbind(class, var)
+}
+   
+```
+
+
+```{r}
+Mydata$class <- as.numeric(unlist(class))
+```
+
+```{r}
+head(Mydata)
+
+```
+
+
+# Finding the total number of cows falling under class 1 and class 0
+```{r}
+cow_class <- table(Mydata$class)
+cow_class
+plot(cow_class,xlab = "Class",ylab = "Total sample size")
+
+```
+
+
+## Proportion Z test for hypothesis testing
+```{r}
+prTest <- prop.test(3215,3309, p=0.95,correct = FALSE)
+prTest
+```
+### At 95% confidence the null hypothesis cant be rejected.
