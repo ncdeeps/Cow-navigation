@@ -21,6 +21,4 @@ sampled at a nominal sampling rate of 1 Hz:
 
 
 # Objective
-- The assumption has been made that cows face straight ahead while walking. We would
-like to investigate whether this is a reasonable assumption, to understand how a cow could
-be guided along a path.
+- The assumption has been made that cows face straight ahead while walking. Investigated whether this is a reasonable assumption, to understand how a cow could be guided along a path.
